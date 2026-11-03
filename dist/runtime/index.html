@@ -4,6 +4,37 @@
  window.addEventListener('error',function(e){report('window error: '+(e.message||'unknown')+' ('+(e.filename||'')+':'+(e.lineno||0)+')')});
  window.addEventListener('unhandledrejection',function(e){report('unhandled rejection: '+String(e.reason||'unknown'))});
  report('inline bootstrap executed; location='+location.href);
+
+ // Minimal GX gameFiles shim for Discord Activities (no Opera GX runtime).
+ // Lets prepare_cache / async_wget2 take the normal cache path and serve the
+ // ArrayBuffer that bridge.js loads from the parent Activity Blob URL.
+ async function waitBuf(){
+   for(var i=0;i<200 && !window.__knightGameBuffer;i++){
+     await new Promise(function(r){setTimeout(r,50)});
+   }
+   if(!window.__knightGameBuffer) throw new Error('game buffer not ready');
+   return window.__knightGameBuffer;
+ }
+ window.oprt = window.oprt || {};
+ window.oprt.gameFiles = {
+   keys: async function(){
+     // Pretend game.unx is already cached (empty md5 matches manifestFilesMD5)
+     return [{fileId:'game.unx:', version:'0.0.0.0'}];
+   },
+   match: async function(fileId, version){
+     console.log('[KNIGHT] gameFiles.match', fileId, version);
+     var buf = await waitBuf();
+     console.log('[KNIGHT] gameFiles.match serving bytes='+buf.byteLength);
+     return new Response(buf.slice(0), {status:200, headers:{'Content-Type':'application/octet-stream'}});
+   },
+   fetchAndCache: async function(fileId, version, request){
+     console.log('[KNIGHT] gameFiles.fetchAndCache', fileId);
+     return window.oprt.gameFiles.match(fileId, version);
+   },
+   delete: async function(){ return; }
+ };
+ console.log('[KNIGHT] fake oprt.gameFiles installed');
+ report('fake oprt.gameFiles installed');
 })();
 </script>
 <script src="bridge.js?v=webgl-trace-01" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] bridge.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] bridge.js FAILED to load'},'*')"></script>
