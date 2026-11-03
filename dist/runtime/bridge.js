@@ -8,7 +8,6 @@ function manifestFiles(){return 'game.unx;';}
 function manifestFilesMD5(){return ';';}
 function onFirstFrameRendered(){
     console.log('FIRST FRAME');
-    host?.ready();
 }
 function onGameSetWindowSize(w,h){console.log('WINDOW SIZE',w,h);}
 function ModuleName(){return Module;}
