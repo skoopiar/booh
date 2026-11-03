@@ -6,11 +6,9 @@
  report('inline bootstrap executed; location='+location.href);
 })();
 </script>
-<script src="bridge.js?v=fsmount-02" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] bridge.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] bridge.js FAILED to load'},'*')"></script>
+<script src="bridge.js?v=webgl-trace-01" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] bridge.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] bridge.js FAILED to load'},'*')"></script>
 <script src="runner.js?v=fsdiag-04" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] runner.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] runner.js FAILED to load'},'*')"></script>
 <script>
-/* Discord Activity fix: parent.fetch(blob:) often hangs in the activity iframe.
-   Wrap the GX loader so it serves the ArrayBuffer already cached by bridge.js. */
 (function patchDiscordGameLoad(){
   function install(){
     var orig = window.__gx_async_wget2;
