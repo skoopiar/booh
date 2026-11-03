@@ -22,7 +22,28 @@ window.addEventListener('unhandledrejection',e=>knightDebug('ERROR','Unhandled p
 let currentRoute='normal',gameURL=null,loadingPromise=null,session=0,timeout,lastStatusLog=-1;
 const isRoute=v=>v==='normal'||v==='weird';
 function status(text,value){$('load-label').textContent=text;if(value!==undefined)$('progress').value=value;const milestone=value===undefined?-1:Math.floor(value/10);if(value===undefined||value===0||value===100||milestone!==lastStatusLog){lastStatusLog=milestone;knightDebug('LOAD',text);}}
-function screen(id){for(const name of ['title-screen','loading','game-host','result','error'])$(name).hidden=name!==id;}
+function screen(id){
+  // Normal exclusive screens
+  for(const name of ['title-screen','loading','game-host','result','error']){
+    $(name).hidden=name!==id;
+  }
+}
+// Boot mode: game iframe must stay layout-visible (not display:none) so the
+// Emscripten runner's requestAnimationFrame / WebGL path can continue after
+// main() returns. Loading UI is shown on top as an overlay.
+function screenBooting(){
+  $('title-screen').hidden=true;
+  $('result').hidden=true;
+  $('error').hidden=true;
+  $('loading').hidden=false;
+  $('game-host').hidden=false;
+  $('loading').classList.add('boot-overlay');
+  $('game-host').classList.add('boot-under');
+}
+function clearBootOverlay(){
+  $('loading').classList.remove('boot-overlay');
+  $('game-host').classList.remove('boot-under');
+}
 async function loadGame(){
  knightDebug('LOAD','loadGame called');
  if(gameURL){knightDebug('LOAD','Reusing existing game Blob URL');return gameURL;}
@@ -44,10 +65,12 @@ async function loadGame(){
  })().catch(e=>{knightDebug('ERROR','Game download failed: '+(e.stack||e));loadingPromise=null;throw e;});
  return loadingPromise;
 }
-function fail(message){knightDebug('ERROR','Activity failure: '+message);clearTimeout(timeout);$('error-text').textContent=message;screen('error');$('game-host').replaceChildren();}
+function fail(message){knightDebug('ERROR','Activity failure: '+message);clearTimeout(timeout);clearBootOverlay();$('error-text').textContent=message;screen('error');$('game-host').replaceChildren();}
 async function start(route=currentRoute){
  if(!isRoute(route))throw new Error('Unknown route');currentRoute=route;const run=++session;knightDebug('INFO','Starting route: '+route);
- clearTimeout(timeout);$('game-host').replaceChildren();document.body.classList.add('playing');screen('loading');status('Preparing the Knight…',0);
+ clearTimeout(timeout);clearBootOverlay();$('game-host').replaceChildren();document.body.classList.add('playing');
+ // Download phase: only loading UI (no iframe yet)
+ screen('loading');status('Preparing the Knight…',0);
  $('route-name').textContent=route==='weird'?'WEIRD ROUTE':'NORMAL ROUTE';$('menu').hidden=false;$('retry').hidden=true;
  try{
   await loadGame();knightDebug('LOAD','loadGame completed');if(run!==session)return;
@@ -57,17 +80,18 @@ async function start(route=currentRoute){
   frame.addEventListener('load',()=>knightDebug('LOAD','Game iframe load event fired'));
   frame.addEventListener('error',()=>knightDebug('ERROR','Game iframe error event'));
   frame.title='Kaizo Roaring Knight — '+route+' route';
-  // Discord Activity: explicitly allow WebGL / WebGPU-related features on the game iframe
   frame.allow='autoplay; fullscreen; gamepad; xr-spatial-tracking; clipboard-write';
   frame.src='runtime/?route='+route;
   frame.id='game-frame';
   $('game-host').append(frame);
-  knightDebug('LOAD','Iframe appended; waiting for KNIGHT_READY');
+  // Show iframe under loading overlay so RAF/WebGL run while we wait for KNIGHT_READY
+  screenBooting();
+  knightDebug('LOAD','Iframe appended (visible under overlay); waiting for KNIGHT_READY');
   timeout=setTimeout(()=>{if(run===session){knightDebug('ERROR','90-second startup timeout reached');fail('The game took too long to start. Try again, or use a current desktop Chrome or Edge browser.');}},90000);
  }catch(error){if(run===session)fail(error.message);}
 }
-function menu(){session++;clearTimeout(timeout);$('game-host').replaceChildren();screen('title-screen');document.body.classList.remove('playing');$('route-name').textContent='';$('retry').hidden=true;$('menu').hidden=true;document.querySelector('[data-route="'+currentRoute+'"]').focus();}
-window.knightHost={getGameURL:()=>gameURL,ready(){knightDebug('INFO','Game signalled KNIGHT_READY');clearTimeout(timeout);screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
+function menu(){session++;clearTimeout(timeout);clearBootOverlay();$('game-host').replaceChildren();screen('title-screen');document.body.classList.remove('playing');$('route-name').textContent='';$('retry').hidden=true;$('menu').hidden=true;document.querySelector('[data-route="'+currentRoute+'"]').focus();}
+window.knightHost={getGameURL:()=>gameURL,ready(){knightDebug('INFO','Game signalled KNIGHT_READY');clearTimeout(timeout);clearBootOverlay();screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);clearBootOverlay();$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
 /* Capture clicks at document level so we can tell whether Activity JS receives them. */
 document.addEventListener('click',event=>{
  const target=event.target?.closest?.('button');
