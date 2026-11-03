@@ -98,7 +98,7 @@ let xhrSequence = 0;
 XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     this.__knightTrace = { id: ++xhrSequence, method, url: String(url), started: performance.now() };
     console.log('[NET TRACE] XHR #'+this.__knightTrace.id+' open', method, String(url));
-    if (typeof url === 'string' && /(^|\\/)game\\.unx(?:\\?|$)/.test(url) && host?.getGameURL?.()) {
+    if (typeof url === 'string' && /(^|\/)game\.unx(?:\?|$)/.test(url) && host?.getGameURL?.()) {
         console.log('[NET TRACE] Redirecting game.unx to parent Blob URL');
         url = host.getGameURL();
         this.__knightTrace.url = '[parent Blob URL]';
