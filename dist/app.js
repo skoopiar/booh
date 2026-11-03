@@ -19,9 +19,9 @@ window.addEventListener('unhandledrejection',e=>knightDebug('ERROR','Unhandled p
  window.addEventListener('message',event=>{if(event.data?.type==='KNIGHT_DEBUG_LOG')append(event.data.level||'LOG',String(event.data.message||''));});
  append('INFO','Activity debug console installed');
 })();
-let currentRoute='normal',gameURL=null,loadingPromise=null,session=0,timeout;
+let currentRoute='normal',gameURL=null,loadingPromise=null,session=0,timeout,lastStatusLog=-1;
 const isRoute=v=>v==='normal'||v==='weird';
-function status(text,value){$('load-label').textContent=text;if(value!==undefined)$('progress').value=value;if(value===undefined||value===0||value===100||Math.round(value)%10===0)knightDebug('LOAD',text);}
+function status(text,value){$('load-label').textContent=text;if(value!==undefined)$('progress').value=value;const milestone=value===undefined?-1:Math.floor(value/10);if(value===undefined||value===0||value===100||milestone!==lastStatusLog){lastStatusLog=milestone;knightDebug('LOAD',text);}}
 function screen(id){for(const name of ['title-screen','loading','game-host','result','error'])$(name).hidden=name!==id;}
 async function loadGame(){
  knightDebug('LOAD','loadGame called');
