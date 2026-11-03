@@ -172,6 +172,8 @@ function gameLog(...args) {
 ========================================= */
 
 var Module = {
+    // Pass the game package explicitly to the native runner.
+    arguments: ['-game', 'game.unx'],
     canvas: document.getElementById('canvas'),
 
     preRun: [
@@ -190,7 +192,7 @@ var Module = {
     ],
 
     postRun: [function(){ console.log('[BOOT TRACE] postRun entered'); }],
-    arguments: [],
+    arguments: ['-game', 'game.unx'],
     print: gameLog,
     printErr: (...args) => console.error(...args),
 
