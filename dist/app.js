@@ -60,6 +60,16 @@ async function start(route=currentRoute){
 }
 function menu(){session++;clearTimeout(timeout);$('game-host').replaceChildren();screen('title-screen');document.body.classList.remove('playing');$('route-name').textContent='';$('retry').hidden=true;$('menu').hidden=true;document.querySelector('[data-route="'+currentRoute+'"]').focus();}
 window.knightHost={getGameURL:()=>gameURL,ready(){knightDebug('INFO','Game signalled KNIGHT_READY');clearTimeout(timeout);screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
+/* Capture clicks at document level so we can tell whether Activity JS receives them. */
+document.addEventListener('click',event=>{
+ const target=event.target?.closest?.('button');
+ if(!target)return;
+ const out=document.getElementById('knight-debug-output'),panel=document.getElementById('knight-debug-panel');
+ const label=(target.textContent||target.id||'button').trim().replace(/\\s+/g,' ').slice(0,80);
+ const line=document.createElement('div');line.textContent='[DOC CLICK] '+label+' at '+new Date().toLocaleTimeString();
+ if(out){out.appendChild(line);while(out.childNodes.length>160)out.removeChild(out.firstChild);}
+ if(panel)panel.scrollTop=panel.scrollHeight;
+},true);
 for(const button of document.querySelectorAll('[data-route]'))button.addEventListener('click',()=>{
  const route=button.dataset.route;
  const out=document.getElementById('knight-debug-output'),panel=document.getElementById('knight-debug-panel');
