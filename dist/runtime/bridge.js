@@ -1,4 +1,3 @@
-
 /* =========================================
    GameMaker callbacks
 ========================================= */
@@ -120,20 +119,27 @@ XMLHttpRequest.prototype.send = function(body) {
 
 
 /* =========================================
-   Fetch request logging
+   Fetch request interception (redirect game.unx)
 ========================================= */
 
 const nativeFetch = window.fetch;
 
 window.fetch = function(input, init) {
-    const url = typeof input === 'string' ? input : input?.url ?? String(input);
-    const started=performance.now();
-    console.log('[NET TRACE] FETCH start',url);
-    return nativeFetch.call(this,input,init).then(response=>{
-        console.log('[NET TRACE] FETCH response',{url,status:response.status,type:response.type,durationMs:Math.round(performance.now()-started)});
+    let url = typeof input === 'string' ? input : input?.url ?? String(input);
+    const started = performance.now();
+
+    if (typeof url === 'string' && /(^|\/)game\.unx(?:\?|$)/.test(url) && host?.getGameURL?.()) {
+        console.log('[NET TRACE] FETCH redirecting game.unx to parent Blob URL');
+        url = host.getGameURL();
+        input = url;
+    }
+
+    console.log('[NET TRACE] FETCH start', url);
+    return nativeFetch.call(this, input, init).then(response => {
+        console.log('[NET TRACE] FETCH response', {url, status: response.status, type: response.type, durationMs: Math.round(performance.now() - started)});
         return response;
-    },error=>{
-        console.error('[NET TRACE] FETCH failed',{url,error:String(error),durationMs:Math.round(performance.now()-started)});
+    }, error => {
+        console.error('[NET TRACE] FETCH failed', {url, error: String(error), durationMs: Math.round(performance.now() - started)});
         throw error;
     });
 };
@@ -185,6 +191,41 @@ var Module = {
             } catch(error) {
                 console.error('[BOOT TRACE] preRun filesystem setup failed',error?.stack||error);
                 throw error;
+            }
+
+            // Mount the large game.unx Blob from the parent Activity into the
+            // Emscripten FS before main() runs. The runner expects this file
+            // and exits immediately with status 0 if it is missing.
+            const gameUrl = host?.getGameURL?.();
+            if (gameUrl) {
+                console.log('[BOOT TRACE] scheduling game.unx mount from parent Blob');
+                Module.addRunDependency('game-unx');
+                fetch(gameUrl)
+                    .then(function(res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching game Blob');
+                        return res.arrayBuffer();
+                    })
+                    .then(function(buf) {
+                        try {
+                            // Remove any previous copy (e.g. on retry)
+                            try { Module.FS_unlink('/game.unx'); } catch (_) {}
+                            Module.FS_createDataFile('/', 'game.unx', new Uint8Array(buf), true, true);
+                            console.log('[BOOT TRACE] game.unx mounted in FS, bytes=' + buf.byteLength);
+                        } catch (err) {
+                            console.error('[BOOT TRACE] FS_createDataFile(game.unx) failed', err?.stack || err);
+                            throw err;
+                        }
+                    })
+                    .catch(function(err) {
+                        console.error('[BOOT TRACE] failed to mount game.unx', err?.stack || err);
+                        // Still remove the dependency so the runner can surface its own error
+                        // instead of hanging forever.
+                    })
+                    .finally(function() {
+                        Module.removeRunDependency('game-unx');
+                    });
+            } else {
+                console.warn('[BOOT TRACE] no parent game URL; runner will likely exit without game.unx');
             }
         }
     ],
