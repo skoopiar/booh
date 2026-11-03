@@ -1,4 +1,3 @@
-
 var g_pWadLoadCallback;
 var g_pJSExceptionHandler;
 var g_pAddAsyncMethod = -1;
@@ -52,7 +51,10 @@ const host = window.parent !== window
 
 console.log('[DEBUG] Bridge loaded');
 console.log('[DEBUG] Has host:', !!host);
-console.log('[DEBUG] Has game URL:', !!host?.getGameURL());
+console.log(
+    '[DEBUG] Has game URL:',
+    !!host?.getGameURL?.()
+);
 
 // Redirect GameMaker's game.unx request to the downloaded game Blob URL
 const nativeOpen = XMLHttpRequest.prototype.open;
@@ -63,7 +65,7 @@ XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     if (
         typeof url === 'string' &&
         /(^|\/)game\.unx(?:\?|$)/.test(url) &&
-        host?.getGameURL()
+        host?.getGameURL?.()
     ) {
         console.log('[DEBUG] Redirecting game.unx');
         url = host.getGameURL();
@@ -90,7 +92,9 @@ function gameLog(...args) {
         line.includes('ERROR!!!') ||
         line.includes('FATAL ERROR')
     ) {
-        host?.error('The game encountered a runtime error. Retry the fight.');
+        host?.error(
+            'The game encountered a runtime error. Retry the fight.'
+        );
     }
 }
 
