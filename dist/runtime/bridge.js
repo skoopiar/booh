@@ -6,7 +6,10 @@ function hasJSExceptionHandler(){return typeof g_pJSExceptionHandler==='function
 function doJSExceptionHandler(s){if(hasJSExceptionHandler())g_pJSExceptionHandler(JSON.parse(s));}
 function manifestFiles(){return 'game.unx;';}
 function manifestFilesMD5(){return ';';}
-function onFirstFrameRendered(){console.log('FIRST FRAME');}
+function onFirstFrameRendered(){
+    console.log('FIRST FRAME');
+    host?.ready();
+}
 function onGameSetWindowSize(w,h){console.log('WINDOW SIZE',w,h);}
 function ModuleName(){return Module;}
 const host=window.parent!==window?window.parent.knightHost:null;
