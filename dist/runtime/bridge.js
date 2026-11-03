@@ -1,3 +1,8 @@
+
+/* =========================================
+   GameMaker callbacks
+========================================= */
+
 var g_pWadLoadCallback;
 var g_pJSExceptionHandler;
 var g_pAddAsyncMethod = -1;
@@ -44,7 +49,11 @@ function ModuleName() {
     return Module;
 }
 
-// Discord Activity bridge
+
+/* =========================================
+   Discord Activity bridge
+========================================= */
+
 const host = window.parent !== window
     ? window.parent.knightHost
     : null;
@@ -56,7 +65,11 @@ console.log(
     !!host?.getGameURL?.()
 );
 
-// Redirect GameMaker's game.unx request to the downloaded game Blob URL
+
+/* =========================================
+   XHR request interception
+========================================= */
+
 const nativeOpen = XMLHttpRequest.prototype.open;
 
 XMLHttpRequest.prototype.open = function(method, url, ...rest) {
@@ -74,7 +87,28 @@ XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     return nativeOpen.call(this, method, url, ...rest);
 };
 
-// GameMaker console output and Activity notifications
+
+/* =========================================
+   Fetch request logging
+========================================= */
+
+const nativeFetch = window.fetch;
+
+window.fetch = function(input, init) {
+    const url = typeof input === 'string'
+        ? input
+        : input?.url ?? String(input);
+
+    console.log('[DEBUG] FETCH request:', url);
+
+    return nativeFetch.call(this, input, init);
+};
+
+
+/* =========================================
+   GameMaker console output
+========================================= */
+
 function gameLog(...args) {
     console.log('[DEBUG] GAME LOG:', ...args);
 
@@ -98,7 +132,11 @@ function gameLog(...args) {
     }
 }
 
-// GameMaker module configuration
+
+/* =========================================
+   GameMaker module configuration
+========================================= */
+
 var Module = {
     canvas: document.getElementById('canvas'),
 
@@ -124,16 +162,32 @@ var Module = {
     printErr: (...args) => console.error(...args),
 
     setStatus: status => {
-        document.getElementById('status').textContent = status;
+        const element = document.getElementById('status');
+
+        if (element) {
+            element.textContent = status;
+        }
     }
 };
 
-// Canvas focus
-document.getElementById('canvas').addEventListener('click', () => {
-    document.getElementById('canvas').focus();
-});
 
-// Keyboard controls
+/* =========================================
+   Canvas focus
+========================================= */
+
+const canvas = document.getElementById('canvas');
+
+if (canvas) {
+    canvas.addEventListener('click', () => {
+        canvas.focus();
+    });
+}
+
+
+/* =========================================
+   Keyboard controls
+========================================= */
+
 document.addEventListener('keydown', event => {
     if (event.code === 'KeyR' && host) {
         event.preventDefault();
@@ -150,7 +204,11 @@ document.addEventListener('keydown', event => {
     }
 }, true);
 
-// Runtime errors
+
+/* =========================================
+   Runtime error reporting
+========================================= */
+
 window.addEventListener('error', event => {
     const status = document.getElementById('status');
 
@@ -160,4 +218,20 @@ window.addEventListener('error', event => {
 
     console.error('[DEBUG] Runtime error:', event.message);
     host?.error(event.message);
+});
+
+
+/* =========================================
+   Unhandled promise rejection reporting
+========================================= */
+
+window.addEventListener('unhandledrejection', event => {
+    console.error(
+        '[DEBUG] Unhandled promise rejection:',
+        event.reason
+    );
+
+    host?.error(
+        String(event.reason ?? 'Unknown runtime error')
+    );
 });
