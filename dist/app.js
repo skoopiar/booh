@@ -53,7 +53,15 @@ async function start(route=currentRoute){
   await loadGame();knightDebug('LOAD','loadGame completed');if(run!==session)return;
   status('Entering the arena…',100);
   knightDebug('LOAD','Creating game iframe');
-  const frame=document.createElement('iframe');frame.addEventListener('load',()=>knightDebug('LOAD','Game iframe load event fired'));frame.addEventListener('error',()=>knightDebug('ERROR','Game iframe error event'));frame.title='Kaizo Roaring Knight — '+route+' route';frame.allow='autoplay; fullscreen; gamepad';frame.src='runtime/?route='+route;frame.id='game-frame';$('game-host').append(frame);
+  const frame=document.createElement('iframe');
+  frame.addEventListener('load',()=>knightDebug('LOAD','Game iframe load event fired'));
+  frame.addEventListener('error',()=>knightDebug('ERROR','Game iframe error event'));
+  frame.title='Kaizo Roaring Knight — '+route+' route';
+  // Discord Activity: explicitly allow WebGL / WebGPU-related features on the game iframe
+  frame.allow='autoplay; fullscreen; gamepad; xr-spatial-tracking; clipboard-write';
+  frame.src='runtime/?route='+route;
+  frame.id='game-frame';
+  $('game-host').append(frame);
   knightDebug('LOAD','Iframe appended; waiting for KNIGHT_READY');
   timeout=setTimeout(()=>{if(run===session){knightDebug('ERROR','90-second startup timeout reached');fail('The game took too long to start. Try again, or use a current desktop Chrome or Edge browser.');}},90000);
  }catch(error){if(run===session)fail(error.message);}
@@ -65,7 +73,7 @@ document.addEventListener('click',event=>{
  const target=event.target?.closest?.('button');
  if(!target)return;
  const out=document.getElementById('knight-debug-output'),panel=document.getElementById('knight-debug-panel');
- const label=(target.textContent||target.id||'button').trim().replace(/\\s+/g,' ').slice(0,80);
+ const label=(target.textContent||target.id||'button').trim().replace(/\s+/g,' ').slice(0,80);
  const line=document.createElement('div');line.textContent='[DOC CLICK] '+label+' at '+new Date().toLocaleTimeString();
  if(out){out.appendChild(line);while(out.childNodes.length>160)out.removeChild(out.firstChild);}
  if(panel)panel.scrollTop=panel.scrollHeight;
