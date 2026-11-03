@@ -202,8 +202,9 @@ var Module = {
             }
 
             // Mount the large game.unx Blob from the parent Activity into the
-            // Emscripten FS before main() runs. Also keeps the GX async_wget
-            // fallback path available via host.getGameURL().
+            // Emscripten FS before main() runs. Also stash the ArrayBuffer on
+            // window so the GX async_wget fallback can use it without a
+            // cross-context blob: fetch (which fails inside Discord Activities).
             const gameUrl = host?.getGameURL?.();
             if (gameUrl) {
                 console.log('[BOOT TRACE] scheduling game.unx mount from parent Blob');
@@ -215,6 +216,8 @@ var Module = {
                     })
                     .then(function(buf) {
                         try {
+                            window.__knightGameBuffer = buf;
+                            console.log('[BOOT TRACE] cached game buffer on window, bytes=' + buf.byteLength);
                             try { Module.FS_unlink('/game.unx'); } catch (_) {}
                             Module.FS_createDataFile('/', 'game.unx', new Uint8Array(buf), true, true);
                             console.log('[BOOT TRACE] game.unx mounted in FS, bytes=' + buf.byteLength);
