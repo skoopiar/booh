@@ -93,20 +93,29 @@ console.log(
 ========================================= */
 
 const nativeOpen = XMLHttpRequest.prototype.open;
-
+const nativeSend = XMLHttpRequest.prototype.send;
+let xhrSequence = 0;
 XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    console.log('[DEBUG] XHR request:', url);
-
-    if (
-        typeof url === 'string' &&
-        /(^|\/)game\.unx(?:\?|$)/.test(url) &&
-        host?.getGameURL?.()
-    ) {
-        console.log('[DEBUG] Redirecting game.unx');
+    this.__knightTrace = { id: ++xhrSequence, method, url: String(url), started: performance.now() };
+    console.log('[NET TRACE] XHR #'+this.__knightTrace.id+' open', method, String(url));
+    if (typeof url === 'string' && /(^|\\/)game\\.unx(?:\\?|$)/.test(url) && host?.getGameURL?.()) {
+        console.log('[NET TRACE] Redirecting game.unx to parent Blob URL');
         url = host.getGameURL();
+        this.__knightTrace.url = '[parent Blob URL]';
     }
-
     return nativeOpen.call(this, method, url, ...rest);
+};
+XMLHttpRequest.prototype.send = function(body) {
+    const t=this.__knightTrace;
+    if(t) {
+        console.log('[NET TRACE] XHR #'+t.id+' send; bodyBytes='+(body?.byteLength ?? body?.size ?? (typeof body==='string'?body.length:0)));
+        for(const name of ['load','error','abort','timeout','loadend']) this.addEventListener(name,()=>{
+            if(name==='loadend') console.log('[NET TRACE] XHR #'+t.id+' complete', {url:t.url,status:this.status,statusText:this.statusText,readyState:this.readyState,responseType:this.responseType,responseBytes:this.response?.byteLength ?? this.response?.size ?? null,durationMs:Math.round(performance.now()-t.started)});
+            else if(name!=='load') console.error('[NET TRACE] XHR #'+t.id+' '+name,{url:t.url,status:this.status,readyState:this.readyState,durationMs:Math.round(performance.now()-t.started)});
+        });
+        this.addEventListener('progress',e=>{if(e.lengthComputable)console.log('[NET TRACE] XHR #'+t.id+' progress',e.loaded+'/'+e.total);});
+    }
+    return nativeSend.call(this, body);
 };
 
 
@@ -117,13 +126,16 @@ XMLHttpRequest.prototype.open = function(method, url, ...rest) {
 const nativeFetch = window.fetch;
 
 window.fetch = function(input, init) {
-    const url = typeof input === 'string'
-        ? input
-        : input?.url ?? String(input);
-
-    console.log('[DEBUG] FETCH request:', url);
-
-    return nativeFetch.call(this, input, init);
+    const url = typeof input === 'string' ? input : input?.url ?? String(input);
+    const started=performance.now();
+    console.log('[NET TRACE] FETCH start',url);
+    return nativeFetch.call(this,input,init).then(response=>{
+        console.log('[NET TRACE] FETCH response',{url,status:response.status,type:response.type,durationMs:Math.round(performance.now()-started)});
+        return response;
+    },error=>{
+        console.error('[NET TRACE] FETCH failed',{url,error:String(error),durationMs:Math.round(performance.now()-started)});
+        throw error;
+    });
 };
 
 
@@ -164,26 +176,26 @@ var Module = {
 
     preRun: [
         function() {
-            Module.FS_createPath('/', 'assets', true, true);
-
-            Module.FS_createDataFile(
-                '/assets',
-                'browser-route.txt',
-                new URLSearchParams(location.search).get('route') === 'weird'
-                    ? '1'
-                    : '0',
-                true,
-                true
-            );
+            console.log('[BOOT TRACE] preRun entered');
+            try {
+                Module.FS_createPath('/', 'assets', true, true);
+                Module.FS_createDataFile('/assets','browser-route.txt',
+                    new URLSearchParams(location.search).get('route') === 'weird' ? '1' : '0',true,true);
+                console.log('[BOOT TRACE] preRun filesystem setup complete');
+            } catch(error) {
+                console.error('[BOOT TRACE] preRun filesystem setup failed',error?.stack||error);
+                throw error;
+            }
         }
     ],
 
-    postRun: [],
+    postRun: [function(){ console.log('[BOOT TRACE] postRun entered'); }],
     arguments: [],
     print: gameLog,
     printErr: (...args) => console.error(...args),
 
     setStatus: status => {
+        console.log('[BOOT TRACE] Emscripten status:',status);
         const element = document.getElementById('status');
 
         if (element) {
@@ -257,3 +269,17 @@ window.addEventListener('unhandledrejection', event => {
         String(event.reason ?? 'Unknown runtime error')
     );
 });
+
+
+// Periodic snapshot while startup is stalled; includes pending XHRs and loaded resources.
+(function startupWatchdog(){
+    let tick=0;
+    setInterval(()=>{
+        tick++;
+        const canvas=document.getElementById('canvas');
+        const resources=performance.getEntriesByType('resource').slice(-12).map(r=>({name:r.name.split('/').pop(),duration:Math.round(r.duration),bytes:r.transferSize||0}));
+        console.log('[WATCHDOG] alive; tick='+tick+' readyState='+document.readyState+
+            ' canvas='+!!canvas+' size='+(canvas?canvas.width+'x'+canvas.height:'none')+
+            ' activeXHR='+xhrSequence+' resources='+JSON.stringify(resources));
+    },10000);
+})();
