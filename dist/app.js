@@ -1,4 +1,13 @@
 const $=id=>document.getElementById(id);
+function knightDebug(level,message){
+ const out=document.getElementById('knight-debug-output'),panel=document.getElementById('knight-debug-panel');
+ const line='['+level+'] '+message;
+ if(out){const row=document.createElement('div');row.textContent=line;out.appendChild(row);while(out.childNodes.length>160)out.removeChild(out.firstChild);}
+ if(panel)panel.scrollTop=panel.scrollHeight;
+ console[level==='ERROR'?'error':level==='WARN'?'warn':'log']('[KNIGHT ACTIVITY]',message);
+}
+window.addEventListener('error',e=>knightDebug('ERROR','Window error: '+(e.message||e.error||'unknown')));
+window.addEventListener('unhandledrejection',e=>knightDebug('ERROR','Unhandled promise: '+(e.reason?.stack||e.reason||'unknown')));
 /* Activity-wide debug console uses markup in index.html, outside the game iframe. */
 (function installActivityDebugConsole() {
  const panel=document.getElementById('knight-debug-panel'),output=document.getElementById('knight-debug-output');
@@ -12,38 +21,45 @@ const $=id=>document.getElementById(id);
 })();
 let currentRoute='normal',gameURL=null,loadingPromise=null,session=0,timeout;
 const isRoute=v=>v==='normal'||v==='weird';
-function status(text,value){$('load-label').textContent=text;if(value!==undefined)$('progress').value=value;}
+function status(text,value){$('load-label').textContent=text;if(value!==undefined)$('progress').value=value;if(value===undefined||value===0||value===100||Math.round(value)%10===0)knightDebug('LOAD',text);}
 function screen(id){for(const name of ['title-screen','loading','game-host','result','error'])$(name).hidden=name!==id;}
 async function loadGame(){
- if(gameURL)return gameURL;
+ knightDebug('LOAD','loadGame called');
+ if(gameURL){knightDebug('LOAD','Reusing existing game Blob URL');return gameURL;}
  if(loadingPromise)return loadingPromise;
  loadingPromise=(async()=>{
-  const meta=await fetch('runtime/game-manifest.json');if(!meta.ok)throw new Error('Game files are missing. Run the local build step described in the README.');
-  const {parts,totalBytes}=await meta.json();let received=0;const buffers=[];
+  knightDebug('LOAD','Fetching runtime/game-manifest.json');
+  const meta=await fetch('runtime/game-manifest.json');knightDebug('LOAD','Manifest response: HTTP '+meta.status);if(!meta.ok)throw new Error('Game files are missing. Run the local build step described in the README.');
+  const {parts,totalBytes}=await meta.json();knightDebug('LOAD','Manifest parsed: '+parts.length+' parts, '+totalBytes+' bytes');let received=0;const buffers=[];
   for(const part of parts){
-   const response=await fetch('runtime/'+part);if(!response.ok)throw new Error('A game download failed. Check your connection and try again.');
+   knightDebug('LOAD','Fetching '+part);
+   const response=await fetch('runtime/'+part);knightDebug('LOAD',part+' response: HTTP '+response.status);if(!response.ok)throw new Error('A game download failed. Check your connection and try again.');
    const chunks=[];const reader=response.body.getReader();
    for(;;){const {done,value}=await reader.read();if(done)break;chunks.push(value);received+=value.length;status('Loading the Knight… '+Math.round(received/totalBytes*100)+'%',received/totalBytes*100);}
+   knightDebug('LOAD',part+' downloaded; total '+received+'/'+totalBytes+' bytes');
    buffers.push(new Blob(chunks));
   }
-  gameURL=URL.createObjectURL(new Blob(buffers,{type:'application/octet-stream'}));return gameURL;
- })().catch(e=>{loadingPromise=null;throw e;});
+  knightDebug('LOAD','All parts downloaded; creating Blob URL');
+  gameURL=URL.createObjectURL(new Blob(buffers,{type:'application/octet-stream'}));knightDebug('LOAD','Blob URL created');return gameURL;
+ })().catch(e=>{knightDebug('ERROR','Game download failed: '+(e.stack||e));loadingPromise=null;throw e;});
  return loadingPromise;
 }
-function fail(message){clearTimeout(timeout);$('error-text').textContent=message;screen('error');$('game-host').replaceChildren();}
+function fail(message){knightDebug('ERROR','Activity failure: '+message);clearTimeout(timeout);$('error-text').textContent=message;screen('error');$('game-host').replaceChildren();}
 async function start(route=currentRoute){
- if(!isRoute(route))throw new Error('Unknown route');currentRoute=route;const run=++session;
+ if(!isRoute(route))throw new Error('Unknown route');currentRoute=route;const run=++session;knightDebug('INFO','Starting route: '+route);
  clearTimeout(timeout);$('game-host').replaceChildren();document.body.classList.add('playing');screen('loading');status('Preparing the Knight…',0);
  $('route-name').textContent=route==='weird'?'WEIRD ROUTE':'NORMAL ROUTE';$('menu').hidden=false;$('retry').hidden=true;
  try{
-  await loadGame();if(run!==session)return;
+  await loadGame();knightDebug('LOAD','loadGame completed');if(run!==session)return;
   status('Entering the arena…',100);
-  const frame=document.createElement('iframe');frame.title='Kaizo Roaring Knight — '+route+' route';frame.allow='autoplay; fullscreen; gamepad';frame.src='runtime/?route='+route;frame.id='game-frame';$('game-host').append(frame);
-  timeout=setTimeout(()=>{if(run===session)fail('The game took too long to start. Try again, or use a current desktop Chrome or Edge browser.');},90000);
+  knightDebug('LOAD','Creating game iframe');
+  const frame=document.createElement('iframe');frame.addEventListener('load',()=>knightDebug('LOAD','Game iframe load event fired'));frame.addEventListener('error',()=>knightDebug('ERROR','Game iframe error event'));frame.title='Kaizo Roaring Knight — '+route+' route';frame.allow='autoplay; fullscreen; gamepad';frame.src='runtime/?route='+route;frame.id='game-frame';$('game-host').append(frame);
+  knightDebug('LOAD','Iframe appended; waiting for KNIGHT_READY');
+  timeout=setTimeout(()=>{if(run===session){knightDebug('ERROR','90-second startup timeout reached');fail('The game took too long to start. Try again, or use a current desktop Chrome or Edge browser.');}},90000);
  }catch(error){if(run===session)fail(error.message);}
 }
 function menu(){session++;clearTimeout(timeout);$('game-host').replaceChildren();screen('title-screen');document.body.classList.remove('playing');$('route-name').textContent='';$('retry').hidden=true;$('menu').hidden=true;document.querySelector('[data-route="'+currentRoute+'"]').focus();}
-window.knightHost={getGameURL:()=>gameURL,ready(){clearTimeout(timeout);screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
+window.knightHost={getGameURL:()=>gameURL,ready(){knightDebug('INFO','Game signalled KNIGHT_READY');clearTimeout(timeout);screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
 for(const button of document.querySelectorAll('[data-route]'))button.addEventListener('click',()=>start(button.dataset.route));
 $('menu').onclick=menu;$('retry').onclick=()=>start();$('again').onclick=()=>start();$('choose').onclick=menu;$('try-again').onclick=()=>start();$('error-menu').onclick=menu;
 $('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else $('stage').requestFullscreen().catch(()=>{});};
