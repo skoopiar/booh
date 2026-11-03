@@ -60,7 +60,14 @@ async function start(route=currentRoute){
 }
 function menu(){session++;clearTimeout(timeout);$('game-host').replaceChildren();screen('title-screen');document.body.classList.remove('playing');$('route-name').textContent='';$('retry').hidden=true;$('menu').hidden=true;document.querySelector('[data-route="'+currentRoute+'"]').focus();}
 window.knightHost={getGameURL:()=>gameURL,ready(){knightDebug('INFO','Game signalled KNIGHT_READY');clearTimeout(timeout);screen('game-host');$('retry').hidden=false;$('game-frame')?.contentWindow.focus();},result(value){clearTimeout(timeout);$('game-host').hidden=false;$('result').hidden=false;$('result-title').textContent=value==='VICTORY'?'THE KNIGHT FALLS.':'THE FIGHT IS NOT OVER.';},error:fail,retry:()=>start(),menu};
-for(const button of document.querySelectorAll('[data-route]'))button.addEventListener('click',()=>start(button.dataset.route));
+for(const button of document.querySelectorAll('[data-route]'))button.addEventListener('click',()=>{
+ const route=button.dataset.route;
+ const out=document.getElementById('knight-debug-output'),panel=document.getElementById('knight-debug-panel');
+ const line=document.createElement('div');line.textContent='[CLICK] Route button clicked: '+route+' at '+new Date().toLocaleTimeString();
+ if(out){out.appendChild(line);while(out.childNodes.length>160)out.removeChild(out.firstChild);}
+ if(panel)panel.scrollTop=panel.scrollHeight;
+ start(route);
+});
 $('menu').onclick=menu;$('retry').onclick=()=>start();$('again').onclick=()=>start();$('choose').onclick=menu;$('try-again').onclick=()=>start();$('error-menu').onclick=menu;
 $('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else $('stage').requestFullscreen().catch(()=>{});};
 document.addEventListener('keydown',event=>{if(event.code==='KeyR'&&$('title-screen').hidden){event.preventDefault();start();}else if(event.code==='Escape'&&$('title-screen').hidden){menu();}});
