@@ -86,6 +86,22 @@ console.log(
     !!host?.getGameURL?.()
 );
 
+// Early WebGL capability probe (Discord Activities can restrict this).
+(function probeWebGL() {
+    try {
+        const c = document.createElement('canvas');
+        const gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+        if (!gl) {
+            console.error('[WEBGL PROBE] No WebGL context available in this iframe');
+            return;
+        }
+        const attrs = gl.getContextAttributes && gl.getContextAttributes();
+        console.log('[WEBGL PROBE] ok', gl.getParameter(gl.VERSION), attrs || {});
+    } catch (e) {
+        console.error('[WEBGL PROBE] failed', e && (e.stack || e.message || e));
+    }
+})();
+
 
 /* =========================================
    XHR request interception
@@ -180,13 +196,11 @@ function gameLog(...args) {
 var Module = {
     canvas: document.getElementById('canvas'),
 
-    // Keep the runtime alive after main() returns. The GX runner often
-    // returns 0 from main after scheduling async work; without this,
-    // Emscripten tears everything down and the game never starts.
+    // Keep the runtime alive after main() returns.
     noExitRuntime: true,
 
-    // Ensure the runner sees the expected game path on argv.
-    arguments: ['-game', 'game.unx'],
+    // Do NOT set arguments: the runner already uses "-game game.unx".
+    // Passing it again produced "-game game.unx -game game.unx".
 
     preRun: [
         function() {
@@ -201,13 +215,13 @@ var Module = {
                 throw error;
             }
 
-            // Mount the large game.unx Blob from the parent Activity into the
-            // Emscripten FS before main() runs. Also stash the ArrayBuffer on
-            // window so the GX async_wget fallback can use it without a
-            // cross-context blob: fetch (which fails inside Discord Activities).
+            // Cache the game Blob as an ArrayBuffer on window only.
+            // Do NOT also copy 131MB into MEMFS — that doubles memory use and
+            // can OOM inside Discord Activities. The patched __gx_async_wget2
+            // serves this buffer when the GX cache API is unavailable.
             const gameUrl = host?.getGameURL?.();
             if (gameUrl) {
-                console.log('[BOOT TRACE] scheduling game.unx mount from parent Blob');
+                console.log('[BOOT TRACE] scheduling game buffer cache from parent Blob');
                 Module.addRunDependency('game-unx');
                 fetch(gameUrl)
                     .then(function(res) {
@@ -215,25 +229,17 @@ var Module = {
                         return res.arrayBuffer();
                     })
                     .then(function(buf) {
-                        try {
-                            window.__knightGameBuffer = buf;
-                            console.log('[BOOT TRACE] cached game buffer on window, bytes=' + buf.byteLength);
-                            try { Module.FS_unlink('/game.unx'); } catch (_) {}
-                            Module.FS_createDataFile('/', 'game.unx', new Uint8Array(buf), true, true);
-                            console.log('[BOOT TRACE] game.unx mounted in FS, bytes=' + buf.byteLength);
-                        } catch (err) {
-                            console.error('[BOOT TRACE] FS_createDataFile(game.unx) failed', err?.stack || err);
-                            throw err;
-                        }
+                        window.__knightGameBuffer = buf;
+                        console.log('[BOOT TRACE] cached game buffer on window, bytes=' + buf.byteLength);
                     })
                     .catch(function(err) {
-                        console.error('[BOOT TRACE] failed to mount game.unx', err?.stack || err);
+                        console.error('[BOOT TRACE] failed to cache game buffer', err?.stack || err);
                     })
                     .finally(function() {
                         Module.removeRunDependency('game-unx');
                     });
             } else {
-                console.warn('[BOOT TRACE] no parent game URL; runner will likely exit without game.unx');
+                console.warn('[BOOT TRACE] no parent game URL; runner will likely fail without game data');
             }
         }
     ],
@@ -328,6 +334,7 @@ window.addEventListener('unhandledrejection', event => {
         const resources=performance.getEntriesByType('resource').slice(-12).map(r=>({name:r.name.split('/').pop(),duration:Math.round(r.duration),bytes:r.transferSize||0}));
         console.log('[WATCHDOG] alive; tick='+tick+' readyState='+document.readyState+
             ' canvas='+!!canvas+' size='+(canvas?canvas.width+'x'+canvas.height:'none')+
-            ' activeXHR='+xhrSequence+' resources='+JSON.stringify(resources));
+            ' activeXHR='+xhrSequence+' resources='+JSON.stringify(resources)+
+            ' hasGameBuf='+!!window.__knightGameBuffer);
     },10000);
 })();
