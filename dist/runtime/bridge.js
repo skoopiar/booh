@@ -54,85 +54,26 @@ function ModuleName() {
    Discord Activity bridge
 ========================================= */
 
-/* =========================================
-   Temporary on-screen debug console
-========================================= */
-
-(function installActivityDebugConsole() {
-    const panel = document.createElement('div');
-    panel.id = 'knight-debug-panel';
-    panel.style.cssText = [
-        'position:fixed',
-        'left:6px',
-        'right:6px',
-        'bottom:6px',
-        'z-index:2147483647',
-        'max-height:42%',
-        'overflow:auto',
-        'padding:8px',
-        'background:rgba(0,0,0,.88)',
-        'color:#d7ffd7',
-        'border:1px solid #67a567',
-        'border-radius:5px',
-        'font:11px/1.4 monospace',
-        'white-space:pre-wrap',
-        'overflow-wrap:anywhere',
-        'pointer-events:auto'
-    ].join(';');
-
-    const heading = document.createElement('div');
-    heading.style.cssText = 'display:flex;justify-content:space-between;position:sticky;top:0;background:#111;padding:3px;font-weight:bold';
-    heading.textContent = 'TEMP DEBUG LOG';
-
-    const hide = document.createElement('button');
-    hide.textContent = 'HIDE';
-    hide.style.cssText = 'font:11px monospace;color:#111;background:#ddd;border:0;padding:2px 8px';
-    heading.appendChild(hide);
-
-    const output = document.createElement('div');
-    panel.append(heading, output);
-    document.addEventListener('DOMContentLoaded', () => {
-        if (!panel.isConnected) document.body.appendChild(panel);
-    });
-    (document.body || document.documentElement).appendChild(panel);
-
-    hide.addEventListener('click', () => {
-        panel.style.display = 'none';
-        const reopen = document.createElement('button');
-        reopen.textContent = 'SHOW DEBUG';
-        reopen.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:2147483647;font:12px monospace';
-        reopen.addEventListener('click', () => {
-            panel.style.display = 'block';
-            reopen.remove();
-        });
-        document.body.appendChild(reopen);
-    });
-
+/* Forward runtime logs to the parent Activity, where they can sit above loading UI. */
+(function forwardActivityLogs() {
     function format(value) {
         if (value instanceof Error) return value.stack || value.message;
         if (typeof value === 'string') return value;
         try { return JSON.stringify(value); } catch (_) { return String(value); }
     }
-
-    function append(level, args) {
-        const line = document.createElement('div');
-        line.textContent = '[' + level + '] ' + Array.from(args, format).join(' ');
-        if (level === 'ERROR') line.style.color = '#ff9b9b';
-        else if (level === 'WARN') line.style.color = '#ffe39b';
-        output.appendChild(line);
-        while (output.childNodes.length > 160) output.removeChild(output.firstChild);
-        panel.scrollTop = panel.scrollHeight;
-    }
-
     for (const level of ['log', 'warn', 'error']) {
         const native = console[level].bind(console);
         console[level] = (...args) => {
             native(...args);
-            append(level.toUpperCase(), args);
+            try {
+                window.parent.postMessage({
+                    type: 'KNIGHT_DEBUG_LOG',
+                    level: level.toUpperCase(),
+                    message: Array.from(args, format).join(' ')
+                }, '*');
+            } catch (_) {}
         };
     }
-
-    append('INFO', ['Debug console installed']);
 })();
 
 const host = window.parent !== window
