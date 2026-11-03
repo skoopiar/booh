@@ -86,6 +86,57 @@ console.log(
     !!host?.getGameURL?.()
 );
 
+/* Trace every canvas getContext call — stall after prepare_cache is often WebGL. */
+(function instrumentGetContext() {
+    const proto = HTMLCanvasElement.prototype;
+    const native = proto.getContext;
+    proto.getContext = function(type, attrs) {
+        const rect = this.getBoundingClientRect();
+        console.log('[WEBGL TRACE] getContext', type, {
+            attrs: attrs || null,
+            canvas: this.id || '(no id)',
+            buffer: this.width + 'x' + this.height,
+            layout: Math.round(rect.width) + 'x' + Math.round(rect.height),
+            hidden: !this.isConnected || rect.width === 0 || rect.height === 0
+        });
+        let ctx = null;
+        try {
+            ctx = native.call(this, type, attrs);
+        } catch (err) {
+            console.error('[WEBGL TRACE] getContext threw', type, err && (err.stack || err.message || err));
+            throw err;
+        }
+        if (!ctx) {
+            console.error('[WEBGL TRACE] getContext returned null for', type);
+            // One retry with relaxed attrs for Discord Activity iframes
+            if (String(type).indexOf('webgl') !== -1) {
+                try {
+                    ctx = native.call(this, type, {
+                        alpha: true,
+                        depth: true,
+                        stencil: true,
+                        antialias: false,
+                        premultipliedAlpha: true,
+                        preserveDrawingBuffer: false,
+                        powerPreference: 'default',
+                        failIfMajorPerformanceCaveat: false
+                    });
+                    console.log('[WEBGL TRACE] retry result', !!ctx);
+                } catch (err2) {
+                    console.error('[WEBGL TRACE] retry threw', err2 && (err2.message || err2));
+                }
+            }
+        } else {
+            try {
+                console.log('[WEBGL TRACE] context ok', type, ctx.getParameter(ctx.VERSION));
+            } catch (_) {
+                console.log('[WEBGL TRACE] context ok', type);
+            }
+        }
+        return ctx;
+    };
+})();
+
 
 /* =========================================
    XHR request interception
@@ -134,7 +185,6 @@ window.fetch = function(input, init) {
         input = url;
     }
 
-    // Prefer in-iframe cached buffer over cross-context blob fetch
     if (window.__knightGameBuffer && typeof url === 'string' &&
         (url.indexOf('blob:') === 0 || /(^|\/)game\.unx(?:\?|$)/.test(url))) {
         console.log('[NET TRACE] FETCH serving cached game buffer, bytes=' + window.__knightGameBuffer.byteLength);
@@ -191,7 +241,6 @@ function gameLog(...args) {
 var Module = {
     canvas: document.getElementById('canvas'),
 
-    // Keep the runtime alive after main() returns.
     noExitRuntime: true,
 
     preRun: [
@@ -207,10 +256,6 @@ var Module = {
                 throw error;
             }
 
-            // The runner checks for game.unx in the FS during main(). If missing,
-            // it exits immediately with status 0 and never reaches MemoryManager /
-            // prepare_cache / async_wget. Mount it, and also stash the buffer for
-            // the Discord-safe async_wget fallback (parent blob fetch hangs).
             const gameUrl = host?.getGameURL?.();
             if (gameUrl) {
                 console.log('[BOOT TRACE] scheduling game.unx load from parent Blob');
@@ -245,9 +290,12 @@ var Module = {
 
     postRun: [function(){
         console.log('[BOOT TRACE] postRun entered');
+        const c = Module.canvas || document.getElementById('canvas');
+        const rect = c ? c.getBoundingClientRect() : null;
         console.log('[BOOT TRACE] hasGameBuf=' + !!window.__knightGameBuffer +
-            ' canvas=' + !!(Module.canvas) +
-            ' canvasSize=' + (Module.canvas ? Module.canvas.width + 'x' + Module.canvas.height : 'n/a'));
+            ' canvas=' + !!c +
+            ' buffer=' + (c ? c.width + 'x' + c.height : 'n/a') +
+            ' layout=' + (rect ? Math.round(rect.width) + 'x' + Math.round(rect.height) : 'n/a'));
     }],
     print: gameLog,
     printErr: (...args) => console.error(...args),
@@ -335,10 +383,14 @@ window.addEventListener('unhandledrejection', event => {
     setInterval(()=>{
         tick++;
         const canvas=document.getElementById('canvas');
+        const rect=canvas?canvas.getBoundingClientRect():null;
         const resources=performance.getEntriesByType('resource').slice(-12).map(r=>({name:r.name.split('/').pop(),duration:Math.round(r.duration),bytes:r.transferSize||0}));
         console.log('[WATCHDOG] alive; tick='+tick+' readyState='+document.readyState+
-            ' canvas='+!!canvas+' size='+(canvas?canvas.width+'x'+canvas.height:'none')+
-            ' activeXHR='+xhrSequence+' resources='+JSON.stringify(resources)+
-            ' hasGameBuf='+!!window.__knightGameBuffer);
+            ' canvas='+!!canvas+
+            ' buffer='+(canvas?canvas.width+'x'+canvas.height:'none')+
+            ' layout='+(rect?Math.round(rect.width)+'x'+Math.round(rect.height):'none')+
+            ' activeXHR='+xhrSequence+
+            ' hasGameBuf='+!!window.__knightGameBuffer+
+            ' visibility='+document.visibilityState);
     },10000);
 })();
