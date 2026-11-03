@@ -109,7 +109,7 @@ XMLHttpRequest.prototype.send = function(body) {
     if(t) {
         console.log('[NET TRACE] XHR #'+t.id+' send; bodyBytes='+(body?.byteLength ?? body?.size ?? (typeof body==='string'?body.length:0)));
         for(const name of ['load','error','abort','timeout','loadend']) this.addEventListener(name,()=>{
-            if(name==='loadend') console.log('[NET TRACE] XHR #'+t.id+' complete', {url:t.url,status:this.status,statusText:this.statusText,readyState:this.readyState,responseType:this.responseType,responseBytes:this.response?.byteLength ?? this.response?.size ?? null,durationMs:Math.round(performance.now()-t.started)});
+            if(name==='loadend') console.log('[NET TRACE] XHR #'+t.id+' complete', {url:t.url,status:this.status,statusText:this.statusText,readyState:this.readyState,responseType:this.response?.byteLength ?? this.response?.size ?? null,durationMs:Math.round(performance.now()-t.started)});
             else if(name!=='load') console.error('[NET TRACE] XHR #'+t.id+' '+name,{url:t.url,status:this.status,readyState:this.readyState,durationMs:Math.round(performance.now()-t.started)});
         });
         this.addEventListener('progress',e=>{if(e.lengthComputable)console.log('[NET TRACE] XHR #'+t.id+' progress',e.loaded+'/'+e.total);});
@@ -180,6 +180,14 @@ function gameLog(...args) {
 var Module = {
     canvas: document.getElementById('canvas'),
 
+    // Keep the runtime alive after main() returns. The GX runner often
+    // returns 0 from main after scheduling async work; without this,
+    // Emscripten tears everything down and the game never starts.
+    noExitRuntime: true,
+
+    // Ensure the runner sees the expected game path on argv.
+    arguments: ['-game', 'game.unx'],
+
     preRun: [
         function() {
             console.log('[BOOT TRACE] preRun entered');
@@ -194,8 +202,8 @@ var Module = {
             }
 
             // Mount the large game.unx Blob from the parent Activity into the
-            // Emscripten FS before main() runs. The runner expects this file
-            // and exits immediately with status 0 if it is missing.
+            // Emscripten FS before main() runs. Also keeps the GX async_wget
+            // fallback path available via host.getGameURL().
             const gameUrl = host?.getGameURL?.();
             if (gameUrl) {
                 console.log('[BOOT TRACE] scheduling game.unx mount from parent Blob');
@@ -207,7 +215,6 @@ var Module = {
                     })
                     .then(function(buf) {
                         try {
-                            // Remove any previous copy (e.g. on retry)
                             try { Module.FS_unlink('/game.unx'); } catch (_) {}
                             Module.FS_createDataFile('/', 'game.unx', new Uint8Array(buf), true, true);
                             console.log('[BOOT TRACE] game.unx mounted in FS, bytes=' + buf.byteLength);
@@ -218,8 +225,6 @@ var Module = {
                     })
                     .catch(function(err) {
                         console.error('[BOOT TRACE] failed to mount game.unx', err?.stack || err);
-                        // Still remove the dependency so the runner can surface its own error
-                        // instead of hanging forever.
                     })
                     .finally(function() {
                         Module.removeRunDependency('game-unx');
