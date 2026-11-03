@@ -6,5 +6,44 @@
  report('inline bootstrap executed; location='+location.href);
 })();
 </script>
-<script src="bridge.js?v=no-exit-01" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] bridge.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] bridge.js FAILED to load'},'*')"></script>
-<script src="runner.js?v=fsdiag-04" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] runner.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] runner.js FAILED to load'},'*')"></script></body></html>
+<script src="bridge.js?v=buf-cache-01" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] bridge.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] bridge.js FAILED to load'},'*')"></script>
+<script src="runner.js?v=fsdiag-04" onload="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'INFO',message:'[IFRAME BOOT] runner.js loaded'},'*')" onerror="parent.postMessage({type:'KNIGHT_DEBUG_LOG',level:'ERROR',message:'[IFRAME BOOT] runner.js FAILED to load'},'*')"></script>
+<script>
+/* Discord Activity fix: parent.fetch(blob:) often hangs in the activity iframe.
+   Wrap the GX loader so it serves the ArrayBuffer already cached by bridge.js. */
+(function patchDiscordGameLoad(){
+  function install(){
+    var orig = window.__gx_async_wget2;
+    if (typeof orig !== 'function') {
+      console.warn('[KNIGHT] __gx_async_wget2 not found; cannot patch');
+      return;
+    }
+    if (orig.__knightPatched) return;
+    window.__gx_async_wget2 = function(a,b,c,d,e,f,g){
+      console.log('[STARTUP TRACE] async_wget2 (discord-patched) for', a);
+      var buf = window.__knightGameBuffer;
+      var p = window.parent;
+      if (buf && p && typeof p.fetch === 'function') {
+        var realFetch = p.fetch.bind(p);
+        var gameUrl = null;
+        try { gameUrl = p.knightHost && p.knightHost.getGameURL && p.knightHost.getGameURL(); } catch (_) {}
+        p.fetch = function(input, init){
+          var url = typeof input === 'string' ? input : (input && input.url);
+          if (url && (url === gameUrl || String(url).indexOf('blob:') === 0)) {
+            console.log('[KNIGHT] parent.fetch intercepted — serving cached buffer, bytes=' + buf.byteLength);
+            return Promise.resolve(new Response(buf.slice(0), {status:200, statusText:'OK'}));
+          }
+          return realFetch(input, init);
+        };
+      } else {
+        console.warn('[KNIGHT] no cached buffer yet when async_wget2 ran; buf=', !!buf);
+      }
+      return orig.apply(this, arguments);
+    };
+    window.__gx_async_wget2.__knightPatched = true;
+    console.log('[KNIGHT] __gx_async_wget2 patched for Discord blob fallback');
+  }
+  install();
+})();
+</script>
+</body></html>
